@@ -35,10 +35,12 @@ generic-looking enough that, unlike RANS's S-numbers or Luscombe's
 8-series codes, they are **not** trusted standalone - every model match
 requires the title to also say "Pitts" explicitly (the same lesson
 learned the hard way in the companion Piper repo, where a bare "Cub"
-mislabeled non-Piper homebuilts as genuine Pipers). On top of that, and
-the lesson just learned in the companion Stearman/Waco repos, a bare
-mention of "Pitts" with no specific model code stated is enough on its
-own to publish too, since plenty of genuine listings just say "Pitts
+mislabeled non-Piper homebuilts as genuine Pipers). The two-seat **Model
+12** ("Python") is recognized both as "Model 12" and as a bare "Pitts 12"
+with no "Model" stated, since both are real title patterns. On top of
+that, and the lesson just learned in the companion Stearman/Waco repos, a
+bare mention of "Pitts" with no specific model code stated is enough on
+its own to publish too, since plenty of genuine listings just say "Pitts
 Special" without stating an exact variant. Titles that read as parts,
 accessories, services, or raffles are still dropped regardless. Every
 surviving listing's title is rewritten to a canonical **`YEAR PITTS
@@ -56,23 +58,27 @@ those repos is still applied to every listing as a general precaution.
 
 ## How it works
 
-- `scraper/barnstormers.py` searches Barnstormers.com's Pitts biplane
-  category for listings, follows pagination, then keeps only the ones
-  whose URL slug matches the Pitts allowlist (Barnstormers builds each
-  listing's URL slug directly from the ad's own title, so this runs
-  before any detail page is fetched). For the matches, it visits each
-  listing's detail page to pull out the price, location, and posted date
-  (falling back to regex heuristics over the visible text since the site
-  doesn't expose structured data). The title is derived from the listing
-  URL's own SEO slug, since every detail page shares one generic
-  `<title>`/`<h1>`; the final parsed title is checked against the
-  allowlist again as a safety net. Pagination is built directly from
-  Barnstormers' known `?seocategory=<url-encoded-path>&page=<n>` URL
-  pattern rather than discovered by following a "Next" link, since this
-  category's pager renders as page-number buttons with no "Next" text or
-  `rel="next"` attribute to find (a lesson learned the hard way in the
-  companion Van's RV repo, where the link-following approach silently
-  stopped after page 1).
+- `scraper/barnstormers.py` searches Barnstormers.com's
+  [advanced headline search for "pitts"](https://www.barnstormers.com/cat_search.php?headline=Pitts&body=&part_num=&mfg=&model=&user__profile__company=&user__last_name=&user__first_name=&user__profile__country=&specialcase__state=&user__profile__city=&user__profile__uzip=&specialcase__phone=&user__email=&my_cats__name=&price__gte=&price__lte=&search_type=advanced&keyword=)
+  for listings (previously the site's Pitts biplane category page), follows
+  pagination, then keeps only the ones whose URL slug matches the Pitts
+  allowlist (Barnstormers builds each listing's URL slug directly from the
+  ad's own title, so this runs before any detail page is fetched). For the
+  matches, it visits each listing's detail page to pull out the price,
+  location, and posted date (falling back to regex heuristics over the
+  visible text since the site doesn't expose structured data). The title is
+  derived from the listing URL's own SEO slug, since every detail page shares
+  one generic `<title>`/`<h1>`; the final parsed title is checked against the
+  allowlist again as a safety net.
+
+  Pagination for these search results pages (`&page=<n>`) is a best-effort
+  guess, not confirmed against the live site - if it's wrong, the scraper
+  still degrades safely to just page 1 rather than looping or duplicating
+  results (see the docstring on `_page_url` in `scraper/barnstormers.py`).
+  This differs from Barnstormers' category pages, which reliably paginate via
+  a documented `?seocategory=<url-encoded-path>&page=<n>` pattern rather than
+  a "Next" link (a lesson learned the hard way in the companion Van's RV repo,
+  where the link-following approach silently stopped after page 1).
 - `main.py` runs the scraper, de-duplicates results, sorts them
   newest-posted-first, and renders them into `docs/index.html` titled
   **"Other Pitts Ads on the Web"**, with one row per listing: Title
@@ -138,7 +144,6 @@ This writes/overwrites `docs/index.html`.
   show a `[warn]`/`[error]` line pointing at what broke rather than failing silently.
 - The scraper identifies itself with a browser-like `User-Agent` and adds a short
   delay between requests to be polite to the site.
-- Only one Barnstormers category is currently configured
-  (`category-17053-Biplane--Pitts.html`). If listings turn out to be split
-  across additional categories, add more URLs to `CATEGORY_URLS` in
-  `scraper/barnstormers.py`.
+- Only one Barnstormers search is currently configured (the "pitts" headline
+  search). If listings turn out to need additional searches, add more URLs to
+  `SEARCH_URLS` in `scraper/barnstormers.py`.

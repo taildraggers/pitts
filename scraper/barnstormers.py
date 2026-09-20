@@ -1,11 +1,16 @@
 """Scraper for Pitts Special listings on barnstormers.com.
 
-Barnstormers' single-manufacturer category pages (the same pattern seen in
-the companion Aviat, CubCrafters, de Havilland, Maule, Van's RV, RANS,
-Luscombe, Just Aircraft, Kitfox, Bellanca, Stearman, and Waco repos) can
-mix in off-brand or off-topic listings with no distinguishing HTML markup
-from the genuine ones. So results are filtered by title against a small
-allowlist of Pitts-specific terms before being published.
+This searches Barnstormers' advanced headline search for "pitts" rather
+than the site's single-manufacturer Pitts biplane category page it used
+previously (category-17053-Biplane--Pitts.html). Both a category page
+(the pattern seen in the companion Aviat, CubCrafters, de Havilland,
+Maule, Van's RV, RANS, Luscombe, Just Aircraft, Kitfox, Bellanca,
+Stearman, and Waco repos) and a headline search can mix in off-brand or
+off-topic listings with no distinguishing HTML markup from the genuine
+ones - if anything a keyword search is looser, since it can surface ads
+that only mention "Pitts" in passing rather than being scoped to the
+make at all. So results are filtered by title against a small allowlist
+of Pitts-specific terms before being published, same as before.
 
 Pitts model codes ("S-1", "S-2", and their letter suffixes - S-1C, S-1S,
 S-1T, S-2A, S-2B, S-2C, S-2S, etc.) are short and generic-looking enough
@@ -36,7 +41,7 @@ every listing as a general precaution.
 from __future__ import annotations
 
 import re
-from urllib.parse import quote, unquote, urljoin, urlparse
+from urllib.parse import unquote, urljoin
 
 from bs4 import BeautifulSoup
 
@@ -53,9 +58,18 @@ SITE_NAME = "Barnstormers.com"
 BASE = "https://www.barnstormers.com"
 MAKE = "Pitts"
 
-# Category page for Pitts biplane listings on Barnstormers.
-CATEGORY_URLS = [
-    f"{BASE}/category-17053-Biplane--Pitts.html",
+# Barnstormers' advanced-search results for classified headlines containing
+# "pitts", used in place of the site's Pitts biplane category page (which
+# this previously pointed at via category-17053-Biplane--Pitts.html) - the
+# existing TARGET_MODEL_PHRASES/_BRAND_RE allowlist filtering below already
+# assumes off-topic results can slip in unfiltered, so it applies equally
+# well to a keyword search as it did to the category page.
+SEARCH_URLS = [
+    f"{BASE}/cat_search.php?headline=pitts&body=&part_num=&mfg=&model="
+    "&user__profile__company=&user__last_name=&user__first_name="
+    "&user__profile__country=&specialcase__state=&user__profile__city="
+    "&user__profile__uzip=&specialcase__phone=&user__email=&my_cats__name="
+    "&price__gte=&price__lte=&search_type=advanced&keyword=",
 ]
 
 MAX_PAGES = 10
@@ -84,6 +98,12 @@ _BRAND_RE = re.compile(r"\bpitts\b", re.IGNORECASE)
 _MARKETING_NAME_RULES = [
     (re.compile(r"\bsuper\s*stinker\b", re.IGNORECASE), "Super Stinker"),
     (re.compile(r"\bmodel\s*12\b", re.IGNORECASE), "Model 12"),
+    # "Pitts 12" with no "Model" stated is a real title pattern that would
+    # otherwise fall through to a bare "Pitts" match, losing the "12"
+    # designation - anchored to immediately follow "pitts" (not a bare
+    # \b12\b scanned over the whole title) so it can't misfire on an
+    # unrelated "12" elsewhere in the title (a price, hours, a tail number).
+    (re.compile(r"\bpitts\s*12\b", re.IGNORECASE), "Model 12"),
     (re.compile(r"\bpython\b", re.IGNORECASE), "Model 12"),
 ]
 
@@ -129,20 +149,23 @@ def _is_non_tailwheel(text: str) -> bool:
     return any(keyword in lowered for keyword in _NON_TAILWHEEL_KEYWORDS)
 
 
-def _page_url(category_url: str, page: int) -> str:
-    """Build a category page's URL directly.
+def _page_url(search_url: str, page: int) -> str:
+    """Build a search results page's URL directly.
 
-    Barnstormers' category pager renders as page-number buttons with no
-    "Next" text or rel="next" attribute for a link-following heuristic to
-    find (confirmed on the companion Van's RV, Stearman, and Waco repos,
-    where that approach silently stopped after page 1) - so each page's
-    URL is built from the known ?seocategory=<url-encoded-path>&page=<n>
-    pattern instead.
+    Unlike Barnstormers' category pages (which paginate via a documented
+    ?seocategory=<path>&page=<n> pattern - see the companion Van's RV,
+    Stearman, and Waco repos, or this repo's own prior category-page
+    version), this environment couldn't reach barnstormers.com to confirm
+    the equivalent for cat_search.php results (see the companion Legend
+    repo, which hit the same limitation), so this appends the same
+    "&page=<n>" convention used elsewhere on the site as a best effort. If
+    that guess is wrong, the "no new links" check in scrape() below still
+    stops the loop safely after page 2 rather than looping or duplicating
+    results - it just means only page 1 gets scraped.
     """
     if page <= 1:
-        return category_url
-    path = urlparse(category_url).path
-    return f"{category_url}?seocategory={quote(path, safe='')}&page={page}"
+        return search_url
+    return f"{search_url}&page={page}"
 
 
 def _title_from_url(url: str) -> str:
@@ -218,22 +241,22 @@ def scrape() -> list[Listing]:
     print(f"[{SITE_NAME}] starting scrape")
     all_links: set[str] = set()
 
-    for category_url in CATEGORY_URLS:
-        seen_this_category: set[str] = set()
+    for search_url in SEARCH_URLS:
+        seen_this_search: set[str] = set()
         for page in range(1, MAX_PAGES + 1):
-            url = _page_url(category_url, page)
+            url = _page_url(search_url, page)
             html = fetch(url)
             if not html:
                 break
             links = _find_listing_links(html)
-            new_links = links - seen_this_category
-            print(f"  [{category_url}] page {page}: {len(links)} links ({len(new_links)} new)")
+            new_links = links - seen_this_search
+            print(f"  [{search_url}] page {page}: {len(links)} links ({len(new_links)} new)")
             if page == 1 and not links:
                 _debug_dump_hrefs(html)
-            seen_this_category |= links
+            seen_this_search |= links
             if not new_links:
                 break
-        all_links |= seen_this_category
+        all_links |= seen_this_search
 
     print(f"[{SITE_NAME}] {len(all_links)} unique listing URLs found")
 
